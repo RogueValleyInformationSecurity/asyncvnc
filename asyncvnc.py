@@ -593,13 +593,27 @@ class Client:
     async def screenshot(self, x: int = 0, y: int = 0, width: Optional[int] = None, height: Optional[int] = None):
         """
         Takes a screenshot and returns a 3D RGBA array.
+
+        If we already have video data and the requested region is complete,
+        we still request a refresh to get any updates, then return once we
+        receive at least one video update.
+
+        If we don't have video data yet, we wait for the full region to be complete.
         """
 
-        self.video.data = None
+        had_complete_data = self.video.is_complete(x, y, width, height)
+
+        # Request update (incremental if we have data, full if not)
         self.video.refresh(x, y, width, height)
+
         while True:
             update_type = await self.read()
             if update_type is UpdateType.VIDEO:
+                # If we had complete data before, return after first video update
+                # (incremental updates from server after actions like clicks)
+                if had_complete_data:
+                    return self.video.as_rgba(x, y, width, height)
+                # Otherwise wait for the region to be complete
                 if self.video.is_complete(x, y, width, height):
                     return self.video.as_rgba(x, y, width, height)
 
