@@ -1,3 +1,5 @@
+import time
+
 from asyncio import StreamReader, StreamWriter, open_connection
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from dataclasses import dataclass, field
@@ -214,6 +216,39 @@ class Mouse:
 
         self.x = x
         self.y = y
+        self._write()
+
+    def drag(self, start_x: int, start_y: int, end_x: int, end_y: int, button: int = 0, delay: float = 0.1):
+        """
+        Performs a drag operation from start to end coordinates.
+
+        This method includes small delays to ensure the VNC server properly
+        registers the drag operation (button down, move, button up sequence).
+
+        Args:
+            start_x: Starting X coordinate
+            start_y: Starting Y coordinate
+            end_x: Ending X coordinate
+            end_y: Ending Y coordinate
+            button: Mouse button (0=left, 1=middle, 2=right)
+            delay: Delay in seconds between drag steps (default 0.1)
+        """
+        # Move to start position
+        self.move(start_x, start_y)
+        time.sleep(delay)
+
+        # Press button
+        mask = 1 << button
+        self.buttons |= mask
+        self._write()
+        time.sleep(delay)
+
+        # Move to end position while holding
+        self.move(end_x, end_y)
+        time.sleep(delay)
+
+        # Release button
+        self.buttons &= ~mask
         self._write()
 
 
