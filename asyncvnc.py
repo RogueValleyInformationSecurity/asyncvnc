@@ -594,28 +594,41 @@ class Client:
         """
         Takes a screenshot and returns a 3D RGBA array.
 
-        If we already have video data and the requested region is complete,
-        we still request a refresh to get any updates, then return once we
-        receive at least one video update.
+        If we already have complete video data for the requested region,
+        we drain any pending updates (with a short timeout) then return.
+        This captures changes from recent actions like clicks.
 
-        If we don't have video data yet, we wait for the full region to be complete.
+        If we don't have complete data yet, request an update and wait for
+        the region to be complete.
         """
+        import asyncio
 
         had_complete_data = self.video.is_complete(x, y, width, height)
 
         # Request update (incremental if we have data, full if not)
         self.video.refresh(x, y, width, height)
 
-        while True:
-            update_type = await self.read()
-            if update_type is UpdateType.VIDEO:
-                # If we had complete data before, return after first video update
-                # (incremental updates from server after actions like clicks)
-                if had_complete_data:
-                    return self.video.as_rgba(x, y, width, height)
-                # Otherwise wait for the region to be complete
-                if self.video.is_complete(x, y, width, height):
-                    return self.video.as_rgba(x, y, width, height)
+        if had_complete_data:
+            # We have complete data - drain any pending updates with short timeout
+            # This captures changes from recent actions (clicks, etc.)
+            try:
+                while True:
+                    # Short timeout to drain buffered updates
+                    update_type = await asyncio.wait_for(self.read(), timeout=0.5)
+                    if update_type is UpdateType.VIDEO:
+                        # Got an update, keep draining
+                        pass
+            except asyncio.TimeoutError:
+                # No more pending updates, return current buffer
+                pass
+            return self.video.as_rgba(x, y, width, height)
+        else:
+            # No complete data yet - wait for full update
+            while True:
+                update_type = await self.read()
+                if update_type is UpdateType.VIDEO:
+                    if self.video.is_complete(x, y, width, height):
+                        return self.video.as_rgba(x, y, width, height)
 
 
 @asynccontextmanager
